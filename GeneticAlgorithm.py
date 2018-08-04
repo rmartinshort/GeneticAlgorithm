@@ -4,11 +4,12 @@
 #A genetic algorithm to aid in feature selection in machine learning problems
 
 import numpy as np
+import multiprocessing as mp
 from sklearn.model_selection import train_test_split
 
 class GeneticAlgorithm:
 
-    def __init__(self,X,Y,Algorithm,Niter=100,keep_fraction=0.5,mutation_rate="auto",nfeatures="auto",test_size=0.3):
+    def __init__(self,X,Y,Algorithm,Niter=100,keep_fraction=0.5,mutation_rate="auto",nfeatures="auto",test_size=0.3,njobs=1):
 
         '''
 
@@ -50,7 +51,7 @@ class GeneticAlgorithm:
         self.feature_selection - dataframe corresponding to the selected features 
         self.best_fitness - fitness score correspondng to self.feature_selection
         self.best_individual - individual corresponding to self.feature_selection
-        
+
         '''
 
 
@@ -60,6 +61,12 @@ class GeneticAlgorithm:
         self.Niter = Niter #number of iterations 
         self.parent_keep = keep_fraction
         self.test_size = test_size
+        self.nprocs = int(njobs)
+
+        if self.nprocs > mp.cpu_count():
+
+            raise ValueError("Entered number of processes > CPU count!")
+
 
         self.feature_columns = self.dataset.columns
 
@@ -89,30 +96,51 @@ class GeneticAlgorithm:
 
         '''
         Assess the fitness of a generation of individuals
+
+        This is the part that takes a long time because it must train a supervised ML algorithm on all individuals in a generation
         '''
 
-        fitness_array = np.zeros(np.shape(generation)[0])
+        def determine_fitness(subgeneration,output,pos):
 
-        for i in range(np.shape(generation)[0]):
-        
-            individual = generation[i,:]
+            fitness_array = np.zeros(np.shape(subgeneration)[0])
+
+            for i in range(np.shape(subgeneration)[0]):
             
-            #Subset the columns based on this individual
-            X_individual = self.dataset[[self.dataset.columns[j] for j in range(len(individual)) if individual[j] == 1]]
-            
-            #Split into train-test datasets
-            X_train, X_test, y_train, y_test = train_test_split(X_individual,self.response,test_size=self.test_size)
-            
-            #Fit the classifier
-            self.algorithm.fit(X_train,y_train)
-            
-            #Report fitness score (score in the testing dataset)
-            fitness = self.algorithm.score(X_test,y_test)
-            
-            #append to fitness array
-            fitness_array[i] = fitness
-        
-        return fitness_array
+                individual = subgeneration[i,:]
+                
+                #Subset the columns based on this individual
+                X_individual = self.dataset[[self.dataset.columns[j] for j in range(len(individual)) if individual[j] == 1]]
+                
+                #Split into train-test datasets
+                X_train, X_test, y_train, y_test = train_test_split(X_individual,self.response,test_size=self.test_size)
+                
+                #Fit the classifier
+                self.algorithm.fit(X_train,y_train)
+                
+                #Report fitness score (score in the testing dataset)
+                fitness = self.algorithm.score(X_test,y_test)
+                
+                #append to fitness array
+                fitness_array[i] = fitness
+
+            output.put((pos,fitness_array))
+
+
+        process_output = mp.Queue()
+        subarrays = np.array_split(generation,self.nprocs)
+        processes = [mp.Process(target=determine_fitness,args=(subarrays[i],process_output,i)) for i in range(self.nprocs)]
+
+        for p in processes:
+            p.start()
+
+        for p in processes:
+            p.join()
+
+        results = [process_output.get() for p in processes]
+        results.sort()
+        results = np.array([r[1] for r in results]).flatten()
+       
+        return results
 
     def make_new_generation(self,old_generation,old_fitness_array):
         
@@ -220,6 +248,11 @@ class GeneticAlgorithm:
 
         self.feature_selection = self.dataset[[self.dataset.columns[j] for j in range(len(self.best_individual)) if self.best_individual[j] == 1]]
 
+
+
+def split_array(array,nprocs):
+
+    '''Split an array into chunks for each process to work on'''
 
 
 
