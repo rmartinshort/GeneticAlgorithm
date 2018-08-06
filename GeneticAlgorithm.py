@@ -250,10 +250,6 @@ class GeneticAlgorithm:
 
 
 
-def split_array(array,nprocs):
-
-    '''Split an array into chunks for each process to work on'''
-
 
 
 
