@@ -18,7 +18,7 @@ def main():
 
 	RF = RandomForestClassifier(n_estimators=1,min_samples_split=2,min_samples_leaf=1)
 
-	GA = GeneticAlgorithm(X,Y,RF)
+	GA = GeneticAlgorithm(X,Y,RF,njobs=4)
 
 	GA.fit()
 

@@ -138,9 +138,14 @@ class GeneticAlgorithm:
 
         results = [process_output.get() for p in processes]
         results.sort()
-        results = np.array([r[1] for r in results]).flatten()
-       
-        return results
+        rlist = []
+        for element in results:
+            r = element[1]
+            for j in range(len(r)):
+                rlist.append(r[j])
+        rlist = np.array(rlist)
+   
+        return rlist
 
     def make_new_generation(self,old_generation,old_fitness_array):
         
