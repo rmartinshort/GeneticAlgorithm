@@ -20,11 +20,11 @@ First, make a classifier of your choice, and select hyperparameters. Note that t
 
 Make a genetic algorithm object. X and Y here are dataframes of the predictors (X) and target vector (Y).    
   
-GA = GeneticAlgorithm(X,Y,RF,njobs=4)    
+- GA = GeneticAlgorithm(X,Y,RF,njobs=4)    
 
 Call GA.fit(). This will run the algorithm. It may take a long time!    
 
-GA.fit()  
+- GA.fit()  
 
 An optimal combination of columns is selected and this can then be used in future developments. The selected features are 
 assigned to the variable 'GA.feature_selection'  
