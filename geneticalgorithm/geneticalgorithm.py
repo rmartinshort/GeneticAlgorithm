@@ -1,15 +1,18 @@
 #!/usr/bin/env python 
-#RMS 2018
+# RMS 2018
 
-#A genetic algorithm to aid in feature selection in machine learning problems
+# A genetic algorithm to aid in feature selection in machine learning problems
+
+import multiprocessing as mp
 
 import numpy as np
-import multiprocessing as mp
 from sklearn.model_selection import train_test_split
 
-class GeneticAlgorithm:
 
-    def __init__(self,X,Y,Algorithm,Niter=100,keep_fraction=0.5,mutation_rate="auto",nfeatures="auto",test_size=0.3,njobs=1):
+class GeneticAlgorithm(object):
+
+    def __init__(self, X, Y, model, Niter=100, keep_fraction=0.5, mutation_rate="auto", nfeatures="auto",
+                 test_size=0.3, njobs=1):
 
         '''
 
@@ -38,7 +41,7 @@ class GeneticAlgorithm:
         Inputs:
         X - dataframe containing the predictors only
         Y - datafame or series containing the target only
-        Algorithm - sklearn classifier or regression object, such as an RandomForestClassifier
+        model - sklearn classifier or regression object, such as an RandomForestClassifier
         Niter - number of iterations of the genetic algorithm
         keep_fraction - the proportion of fittest parents to keep in each new generation
         mutation_rate - the probability of mutation in each child
@@ -54,19 +57,16 @@ class GeneticAlgorithm:
 
         '''
 
-
         self.dataset = X
         self.response = Y
-        self.algorithm = Algorithm #needs to be a sklearn object
-        self.Niter = Niter #number of iterations 
+        self.model = model  # needs to be a sklearn object
+        self.Niter = Niter  # number of iterations
         self.parent_keep = keep_fraction
         self.test_size = test_size
         self.nprocs = int(njobs)
 
         if self.nprocs > mp.cpu_count():
-
             raise ValueError("Entered number of processes > CPU count!")
-
 
         self.feature_columns = self.dataset.columns
 
@@ -75,60 +75,61 @@ class GeneticAlgorithm:
         else:
             self.nfeatures = nfeatures
 
-        self.P = 2*int(np.ceil(self.nfeatures*1.5/2)) #number of individuals in a given generation
+        self.P = 2 * int(np.ceil(self.nfeatures * 1.5 / 2))  # number of individuals in a given generation
 
         if mutation_rate == 'auto':
 
-            self.mutation_rate = 1.0/(self.P*np.sqrt(self.nfeatures))
+            self.mutation_rate = 1.0 / (self.P * np.sqrt(self.nfeatures))
         else:
             self.mutation_rate = mutation_rate
 
         self.fitness_evolution = []
         self.best_individual_evolution = []
 
-        #These three things are typically the most desired output
+        # These three things are typically the most desired output
         self.feature_selection = None
         self.best_fitness = None
         self.best_individual = None
 
-
-    def fitness(self,generation):
+    def fitness(self, generation):
 
         '''
         Assess the fitness of a generation of individuals
 
-        This is the part that takes a long time because it must train a supervised ML algorithm on all individuals in a generation
+        This is the part that takes a long time because it must train a supervised ML algorithm on all individuals in
+        a generation
         '''
 
-        def determine_fitness(subgeneration,output,pos):
+        def determine_fitness(subgeneration, output, pos):
 
             fitness_array = np.zeros(np.shape(subgeneration)[0])
 
             for i in range(np.shape(subgeneration)[0]):
-            
-                individual = subgeneration[i,:]
-                
-                #Subset the columns based on this individual
-                X_individual = self.dataset[[self.dataset.columns[j] for j in range(len(individual)) if individual[j] == 1]]
-                
-                #Split into train-test datasets
-                X_train, X_test, y_train, y_test = train_test_split(X_individual,self.response,test_size=self.test_size)
-                
-                #Fit the classifier
-                self.algorithm.fit(X_train,y_train)
-                
-                #Report fitness score (score in the testing dataset)
-                fitness = self.algorithm.score(X_test,y_test)
-                
-                #append to fitness array
+                individual = subgeneration[i, :]
+
+                # Subset the columns based on this individual
+                X_individual = self.dataset[
+                    [self.dataset.columns[j] for j in range(len(individual)) if individual[j] == 1]]
+
+                # Split into train-test datasets
+                X_train, X_test, y_train, y_test = train_test_split(X_individual, self.response,
+                                                                    test_size=self.test_size)
+
+                # Fit the classifier
+                self.model.fit(X_train, y_train)
+
+                # Report fitness score (score in the testing dataset)
+                fitness = self.model.score(X_test, y_test)
+
+                # append to fitness array
                 fitness_array[i] = fitness
 
-            output.put((pos,fitness_array))
-
+            output.put((pos, fitness_array))
 
         process_output = mp.Queue()
-        subarrays = np.array_split(generation,self.nprocs)
-        processes = [mp.Process(target=determine_fitness,args=(subarrays[i],process_output,i)) for i in range(self.nprocs)]
+        subarrays = np.array_split(generation, self.nprocs)
+        processes = [mp.Process(target=determine_fitness, args=(subarrays[i], process_output, i)) for i in
+                     range(self.nprocs)]
 
         for p in processes:
             p.start()
@@ -144,72 +145,71 @@ class GeneticAlgorithm:
             for j in range(len(r)):
                 rlist.append(r[j])
         rlist = np.array(rlist)
-   
+
         return rlist
 
-    def make_new_generation(self,old_generation,old_fitness_array):
-        
+    def make_new_generation(self, old_generation, old_fitness_array):
+
         '''
         Make a new generation of individuals
         '''
-        
+
         generation_size = len(old_fitness_array)
-            
-        #Vector describing the probability of reporduction of each individual in a generation
-        prob_weights = 2*np.argsort(old_fitness_array/(generation_size*(generation_size+1)))[::-1]
-        
-        prob_reproduction = prob_weights/np.sum(prob_weights)
-        
-        #Make vector of indices to choose
+
+        # Vector describing the probability of reporduction of each individual in a generation
+        prob_weights = 2 * np.argsort(old_fitness_array / (generation_size * (generation_size + 1)))[::-1]
+
+        prob_reproduction = prob_weights / np.sum(prob_weights)
+
+        # Make vector of indices to choose
         a = np.arange(generation_size)
-        
-        children = np.zeros([2*generation_size,np.shape(old_generation)[1]])
-        
+
+        children = np.zeros([2 * generation_size, np.shape(old_generation)[1]])
+
         for i in range(generation_size):
-            parent_index_pair = np.random.choice(a,size=2,replace=False,p=prob_reproduction)
-            
+            parent_index_pair = np.random.choice(a, size=2, replace=False, p=prob_reproduction)
+
             parent1 = old_generation[parent_index_pair[0]]
             parent2 = old_generation[parent_index_pair[1]]
-            
-            #Do cross over and apply mutation to generate two children for each parent pair
+
+            # Do cross over and apply mutation to generate two children for each parent pair
             child1 = parent1.copy()
             child2 = parent2.copy()
-            
-            #Generate locations of genetic information to swap
-            pos = np.random.choice(len(parent1),size=int(len(parent1)/2),replace=False)
+
+            # Generate locations of genetic information to swap
+            pos = np.random.choice(len(parent1), size=int(len(parent1) / 2), replace=False)
             child1[pos] = parent2[pos]
             child2[pos] = parent1[pos]
-            
-            #Generate mutation vector
-            mutate1 = np.random.binomial(1,self.mutation_rate,len(parent1))
-            mutate2 = np.random.binomial(1,self.mutation_rate,len(parent1))
-            
-            #Generate children and fill child array
-            child1 = (child1+mutate1 >= 1).astype(int)
-            child2 = (child2+mutate2 >= 1).astype(int)
-            
-            children[i,:] = child1
-            children[-(i+1),:] = child2
-            
-        #shuffle and return only the same number of children as there were parents 
+
+            # Generate mutation vector
+            mutate1 = np.random.binomial(1, self.mutation_rate, len(parent1))
+            mutate2 = np.random.binomial(1, self.mutation_rate, len(parent1))
+
+            # Generate children and fill child array
+            child1 = (child1 + mutate1 >= 1).astype(int)
+            child2 = (child2 + mutate2 >= 1).astype(int)
+
+            children[i, :] = child1
+            children[-(i + 1), :] = child2
+
+        # shuffle and return only the same number of children as there were parents
         np.random.shuffle(children)
-        
-        new_generation = children[0:generation_size,:]
-        
-        #replace some fraction of the children with the fittest parents, if desired
-        
-        nparents_to_keep = int(self.parent_keep*generation_size)
-        
+
+        new_generation = children[0:generation_size, :]
+
+        # replace some fraction of the children with the fittest parents, if desired
+
+        nparents_to_keep = int(self.parent_keep * generation_size)
+
         if nparents_to_keep > 0:
             parents_keep = np.argsort(old_fitness_array)[::-1][:nparents_to_keep]
 
             for i in range(len(parents_keep)):
-                new_generation[i,:] = old_generation[parents_keep[i],:]
+                new_generation[i, :] = old_generation[parents_keep[i], :]
 
         np.random.shuffle(new_generation)
-        
-        
-        return new_generation 
+
+        return new_generation
 
     def fit(self):
 
@@ -218,46 +218,37 @@ class GeneticAlgorithm:
         This part takes a long time and could be parallelized
         '''
 
-        #Make the first generation 
-        old_generation = np.zeros([self.P,self.nfeatures])
+        # Make the first generation
+        old_generation = np.zeros([self.P, self.nfeatures])
         for i in range(self.P):
-            old_generation[i,:] = np.random.binomial(1,0.5,self.nfeatures)
+            old_generation[i, :] = np.random.binomial(1, 0.5, self.nfeatures)
 
         old_fitness_array = self.fitness(old_generation)
 
         self.best_fitness = np.max(old_fitness_array)
-        self.best_individual = old_generation[np.argmax(old_fitness_array),:]
+        self.best_individual = old_generation[np.argmax(old_fitness_array), :]
 
         self.fitness_evolution.append(self.best_fitness)
         self.best_individual_evolution.append(self.best_individual)
 
-        for n in range(1,self.Niter):
+        for n in range(1, self.Niter):
+            print("GeneticAlgorithm: Testing generation %i" % n)
 
-            print("GeneticAlgorithm: Testing generation %i" %n)
-
-            #Make new generation
-            new_generation = self.make_new_generation(old_generation,old_fitness_array)
-            #Get fitness of new generation
+            # Make new generation
+            new_generation = self.make_new_generation(old_generation, old_fitness_array)
+            # Get fitness of new generation
             new_fitness_array = self.fitness(new_generation)
 
-            #Locate and extract the best individual and its score
+            # Locate and extract the best individual and its score
             self.best_fitness = np.max(new_fitness_array)
-            self.best_individual = new_generation[np.argmax(new_fitness_array),:]
+            self.best_individual = new_generation[np.argmax(new_fitness_array), :]
             self.fitness_evolution.append(self.best_fitness)
             self.best_individual_evolution.append(self.best_individual)
 
             old_fitness_array = new_fitness_array
             old_generation = new_generation
 
-        #Get the features associated with the 'winning' individual
+        # Get the features associated with the 'winning' individual
 
-        self.feature_selection = self.dataset[[self.dataset.columns[j] for j in range(len(self.best_individual)) if self.best_individual[j] == 1]]
-
-
-
-
-
-
-        
-
-
+        self.feature_selection = self.dataset[
+            [self.dataset.columns[j] for j in range(len(self.best_individual)) if self.best_individual[j] == 1]]
